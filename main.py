@@ -1,8 +1,13 @@
+import requests
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import pandas as pd
 
+# ---------------------- Settings ----------------------
+HF_TOKEN = os.environ.get("HF_TOKEN", "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")  # On Render, set in env vars!
+
+# ---------------------- Topics ------------------------
 topics = [
     {"topic_id": "t1", "name": "Basic Arithmetic",     "tags": ["math", "arithmetic"], "prerequisite": None},
     {"topic_id": "t2", "name": "Fractions",            "tags": ["math", "arithmetic"], "prerequisite": "t1"},
@@ -12,10 +17,7 @@ topics = [
     {"topic_id": "t6", "name": "Shapes and Angles",    "tags": ["math", "geometry"],   "prerequisite": "t5"},
 ]
 
-model_name = "microsoft/phi-3-mini-4k-instruct"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
-
+# ------------------ Recommender Logic -----------------
 def get_recommendations(student, df, topics, mastery_threshold=70):
     topic_dict = {t['topic_id']: t for t in topics}
     recommendations = []
@@ -52,30 +54,45 @@ def get_recommendations(student, df, topics, mastery_threshold=70):
             seen.add(key)
     return deduped, []
 
-def get_llm_feedback_phi3(rec):
+# --------- Hugging Face Inference API (LLM Feedback) ----------
+def get_llm_feedback_hfapi(rec):
     prompt = (
         f"Question: Give a creative, direct, and motivating one-sentence message to a student struggling with {rec['recommend_for']}. "
         f"Encourage them to review {rec['recommended_topic']} by telling them how it will help. "
         "Do not give definitions or introductions. Start with encouragement.\n"
         "Answer:"
     )
-    inputs = tokenizer(prompt, return_tensors="pt")
-    outputs = model.generate(**inputs, max_new_tokens=60, pad_token_id=tokenizer.eos_token_id)
-    result = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    feedback = result.split("Answer:")[-1].split("Question:")[0].strip().strip('"').strip("'")
-    return feedback
+    API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-base"
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 60}}
+    response = requests.post(API_URL, headers=headers, json=payload)
+    if response.status_code == 200:
+        outputs = response.json()
+        if isinstance(outputs, list) and "generated_text" in outputs[0]:
+            result = outputs[0]["generated_text"]
+        elif isinstance(outputs, dict) and "generated_text" in outputs:
+            result = outputs["generated_text"]
+        elif isinstance(outputs, dict) and "error" in outputs:
+            return "Sorry, API error: " + outputs["error"]
+        else:
+            result = str(outputs)
+        feedback = str(result).split("Answer:")[-1].split("Question:")[0].strip().strip('"').strip("'")
+        return feedback
+    else:
+        return f"Error: {response.status_code} {response.text}"
 
-def add_llm_feedback_phi3(recommendations):
+def add_llm_feedback_hfapi(recommendations):
     results = []
     for rec in recommendations:
-        feedback = get_llm_feedback_phi3(rec)
+        feedback = get_llm_feedback_hfapi(rec)
         rec_with_feedback = {**rec, "feedback": feedback}
         results.append(rec_with_feedback)
     return results
 
+# ------------------ FastAPI Setup ---------------------
 class ScoreInput(BaseModel):
     student: str
-    scores: dict
+    scores: dict  # e.g. {"Basic Arithmetic": 45, ...}
 
 app = FastAPI()
 
@@ -87,7 +104,7 @@ def recommend(input: ScoreInput):
         data.append({"student": input.student, "topic_id": t["topic_id"], "score": score})
     df = pd.DataFrame(data)
     core_recs, _ = get_recommendations(input.student, df, topics)
-    core_feedback = add_llm_feedback_phi3(core_recs)
+    core_feedback = add_llm_feedback_hfapi(core_recs)
     return [
         {
             "recommend_for": r["recommend_for"],
