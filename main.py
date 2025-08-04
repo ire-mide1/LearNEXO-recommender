@@ -26,25 +26,24 @@ def get_recommendations(student, df, topics, mastery_threshold=70):
         topic_id = weak_row['topic_id']
         topic_info = topic_dict[topic_id]
         prereq_id = topic_info.get('prerequisite')
+        # 1. If a prerequisite exists, recommend it regardless of its score (so users always have a next step)
         if prereq_id:
-            prereq_row = df[(df['student'] == student) & (df['topic_id'] == prereq_id)]
-            if not prereq_row.empty and prereq_row.iloc[0]['score'] < mastery_threshold:
-                prereq_name = topic_dict[prereq_id]['name']
-                recommendations.append({
-                    "recommend_for": topic_info['name'],
-                    "recommended_topic": prereq_name
-                })
+            prereq_name = topic_dict[prereq_id]['name']
+            recommendations.append({
+                "recommend_for": topic_info['name'],
+                "recommended_topic": prereq_name
+            })
         else:
+            # 2. Otherwise, recommend a related topic (in same tag group)
             specific_tags = [tag for tag in topic_info['tags'] if tag != 'math']
             for specific_tag in specific_tags:
                 for t in topics:
-                    if (t['topic_id'] != topic_id and specific_tag in t['tags'] and 'math' in t['tags']):
-                        t_row = df[(df['student'] == student) & (df['topic_id'] == t['topic_id'])]
-                        if not t_row.empty and t_row.iloc[0]['score'] < mastery_threshold:
-                            recommendations.append({
-                                "recommend_for": topic_info['name'],
-                                "recommended_topic": t['name']
-                            })
+                    if t['topic_id'] != topic_id and specific_tag in t['tags'] and 'math' in t['tags']:
+                        recommendations.append({
+                            "recommend_for": topic_info['name'],
+                            "recommended_topic": t['name']
+                        })
+    # Deduplicate recommendations
     seen = set()
     deduped = []
     for rec in recommendations:
