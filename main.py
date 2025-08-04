@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import pandas as pd
 
 # ---------------------- Settings ----------------------
-HF_TOKEN = os.environ.get("HF_TOKEN", "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")  # On Render, set in env vars!
+HF_TOKEN = os.environ.get("HF_TOKEN", "YOUR_HF_TOKEN")  # On Render, set in env vars!
 
 # ---------------------- Topics ------------------------
 topics = [
