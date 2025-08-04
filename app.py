@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 
 # ------ Update this with your deployed API URL ------
-API_URL = "https://your-backend-url.onrender.com/recommend/"
+API_URL = "https://learnexo-recommender-1.onrender.com/recommend/"
+
 # If running locally for testing, use: API_URL = "http://localhost:10000/recommend/"
 
 # ----- Topic List -----
